@@ -1,0 +1,318 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<title>P1185R0</title>
+
+		<link rel="stylesheet" href="css/reveal.css">
+		<link rel="stylesheet" href="css/theme/league.css">
+        <link rel="stylesheet" href="css/custom.css">
+        <link rel="stylesheet" href="css/line-numbers.css">
+
+		<!-- Theme used for syntax highlighting of code -->
+		<link rel="stylesheet" href="lib/css/atom-one-dark.css">
+        
+        <style>
+        .reveal .slides section .fragment.highlight-current-code {
+			opacity: 1;
+			visibility: inherit;
+        }
+
+        .reveal .slides section .fragment.highlight-current-code.current-fragment {
+			background: #b21057;
+        }            
+        
+        .emph {
+			color: #e7ad52 !important;
+		}
+        
+        .invisible-frag.fragment:not(.current-fragment) {
+            display: none !important;
+        }
+        </style>
+
+		<!-- Printing and PDF exports -->
+		<script>
+			var link = document.createElement( 'link' );
+			link.rel = 'stylesheet';
+			link.type = 'text/css';
+			link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+			document.getElementsByTagName( 'head' )[0].appendChild( link );
+		</script>
+	</head>
+	<body>
+		<div class="reveal">
+			<div class="slides">
+                <section data-markdown=""
+                         data-separator="^====+$"
+                         data-separator-vertical="^----+$"
+                         data-notes="^Note:">
+                <script type="text/template">                
+## P1185R0
+### `<=> != ==`
+
+=================================
+
+## The problem 
+
+<pre><code data-trim data-noescape class="lang-cpp">
+struct S {
+    vector&lt;string&gt; names;<div class="fragment highlight-current-code" data-fragment-index="1">    auto operator&lt;=&gt;(S const&) const = default;</div>};
+</code></pre>
+
+=================================
+
+## <=> for vector
+
+<pre><code data-trim data-noescape class="lang-cpp">
+template &lt;typename T&gt;
+strong_ordering operator&lt;=&gt;(vector&lt;T&gt; const& lhs, vector&lt;T&gt; const& rhs) {
+    size_t min_size = min(lhs.size(), rhs.size());
+    for (size_t i = 0; i != min_size; ++i) {
+        if (<span class="fragment highlight-current-code" data-fragment-index="1">auto const cmp = lhs[i] &lt;=&gt; rhs[i]</span>; cmp != 0) {
+            return cmp;
+        }
+    }
+    return <span class="fragment highlight-current-code" data-fragment-index="1">lhs.size() &lt;=&gt; rhs.size()</span>;
+}</code></pre>
+                
+=================================
+
+## == for vector
+
+<pre><code data-trim data-noescape class="lang-cpp">
+template &lt;typename T&gt;
+bool operator==(vector&lt;T&gt; const& lhs, vector&lt;T&gt; const& rhs) {
+    // early short-circuit
+    const size_t size = lhs.size();
+    if (size != rhs.size()) return false;
+
+    for (size_t i = 0; i != size; ++i) {
+        if (!(<span class="fragment highlight-current-code" data-fragment-index="1">lhs[i] == rhs[i]</span>)) {
+            return false;
+        }
+    }
+    return <span class="fragment highlight-current-code" data-fragment-index="1">true</span>;
+}</code></pre>
+
+<div class="fragment" data-fragment-index="2"><pre><code data-trim data-noescape class="lang-cpp">template &lt;typename T&gt;
+bool operator!=(vector&lt;T&gt; const& lhs, vector&lt;T&gt; const& rhs) {
+    return !(lhs == rhs);
+}</code></pre></div>
+                
+=================================
+
+## <=> for S?
+
+```c++
+struct S {
+    vector<string> names;
+    auto operator<=>(S const&) const = default;
+};
+```
+<div class="fragment" data-fragment-index="1"><pre><code data-trim data-noescape class="lang-cpp">s1 == s2;</code></pre></div>
+<div class="fragment" data-fragment-index="2"><pre><code data-trim data-noescape class="lang-cpp">(s1.names &lt;=&gt; s2.names) == 0;</code></pre></div>
+
+=================================
+
+## == for S???
+<pre><code data-trim data-noescape class="lang-cpp">
+struct S {
+    vector&lt;string&gt; names;
+    auto operator&lt;=&gt;(S const&) const = default;
+    <span class="fragment invisible-frag" data-fragment-index=1>bool operator==(S const&) const = default;</span><span class="fragment invisible-frag" data-fragment-index=2>bool operator==(S const& rhs) const {
+        return (*this &lt;=&gt; rhs) == 0;
+    }</span><span class="fragment invisible-frag" data-fragment-index=3>bool operator<span class="fragment highlight-current-code" data-fragment-index="3">==</span>(S const& rhs) const {
+        return (<span class="fragment highlight-current-code" data-fragment-index="3">*this &lt;=&gt; rhs</span>) == 0;
+    }</span>
+};
+</code></pre>
+                
+=================================
+
+## Optimal S
+
+```c++
+struct S {
+    vector<string> names;
+    auto operator<=>(S const&) const = default;
+    bool operator==(S const& rhs) const { return names == rhs.names; }
+    bool operator!=(S const& rhs) const { !(*this == rhs); }
+};
+```
+
+=================================
+
+## Proposal §2.1
+
+Change equality operator candidate rules
+
+<table>
+<thead>
+<tr><th>Source</th><th>C++20 WD</th><th>Proposed</th></tr>
+</thead>
+<tbody>
+<tr>
+<td><pre><code data-trim data-noescape class="lang-cpp">a == b</code></pre></td>
+<td><pre><code data-trim data-noescape class="lang-cpp">a == b
+(a &lt;=&gt; b) == 0
+0 == (b &lt;=&gt; a)</code></pre></td>
+<td><pre><code data-trim data-noescape class="lang-cpp">a == b
+b == a</code></pre></td>
+</tr>
+<tr>
+<td><pre><code data-trim data-noescape class="lang-cpp">a != b</code></pre></td>
+<td><pre><code data-trim data-noescape class="lang-cpp">a != b
+(a &lt;=&gt; b) != 0
+0 != (b &lt;=&gt; a)</code></pre></td>
+<td><pre><code data-trim data-noescape class="lang-cpp">a != b
+!(a == b)
+!(b == a)</code></pre></td>
+</tr>
+</tbody>
+</table>
+
+=================================
+
+## Proposal §2.2
+
+Change defaulted equality operator meanings
+
+<table>
+<thead>
+<tr><th>C++20 WD</th><th>Proposed</th></tr>
+</thead>
+<tbody>
+<tr>
+<td><pre><code data-trim data-noescape class="lang-cpp">struct X {
+  A a;
+  B b;
+   
+  <span class="fragment invisible-frag" data-fragment-index=1>auto operator&lt;=&gt;(X const&) const = default;  
+  bool operator==(X const&) const = default;
+  bool operator!=(X const&) const = default;</span><span class="fragment invisible-frag" data-fragment-index=2>auto operator&lt;=&gt;(X const&) const { /&ast; ... &ast;/ }
+  bool operator==(X const& rhs) const {
+    return (&ast;this &lt;=&gt; rhs) == 0;
+  }
+  bool operator!=(X const& rhs) const {
+    return (&ast;this &lt;=&gt; rhs) != 0;
+  }</span><span class="fragment invisible-frag" data-fragment-index=3>auto operator&lt;=&gt;(X const&) const { /&ast; ... &ast;/ }
+  bool operator==(X const& rhs) const {
+    return (<span class="fragment highlight-current-code" data-fragment-index=3>&ast;this &lt;=&gt; rhs</span>) == 0;
+  }
+  bool operator!=(X const& rhs) const {
+    return (<span class="fragment highlight-current-code" data-fragment-index=3>&ast;this &lt;=&gt; rhs</span>) != 0;
+  }</span>
+};</code></pre>    
+</td>
+<td><pre><code data-trim data-noescape class="lang-cpp">struct X {
+  A a;
+  B b;
+   
+  <span class="fragment invisible-frag" data-fragment-index=1>auto operator&lt;=&gt;(X const&) const = default;
+  bool operator==(X const&) const = default;
+  bool operator!=(X const&) const = default;</span><span class="fragment invisible-frag" data-fragment-index=2>auto operator&lt;=&gt;(X const&) const { /&ast; ... &ast;/ }
+  bool operator==(X const& rhs) const {
+    return a == rhs.a && b == rhs.b;
+  }
+  bool operator!=(X const& rhs) const {
+    return !(&ast;this == rhs);
+  }</span><span class="fragment invisible-frag" data-fragment-index=3>auto operator&lt;=&gt;(X const&) const { /&ast; ... &ast;/ }
+  bool operator==(X const& rhs) const {
+    return <span class="fragment highlight-current-code" data-fragment-index=3>a == rhs.a && b == rhs.b</span>;
+  }
+  bool operator!=(X const& rhs) const {
+    return !(<span class="fragment highlight-current-code" data-fragment-index=3>&ast;this == rhs</span>);
+  }</span>
+};</code></pre></td>
+</tr>
+</tbody>
+</table>
+             
+=================================
+
+## Proposal §2.3 [optional]
+
+Change meaning of *strong structural equality*
+
+<pre><code data-trim data-noescape class="lang-cpp">struct C {
+    int i;
+    bool operator==(C const&) const = default;
+};
+
+template &lt;C x>
+struct Z { };</code></pre>
+
+=================================
+
+## Proposal §2.4 [optional]
+
+Implicitly generate defaulted `==` from defaulted `<=>`
+
+```c++
+struct S {
+    vector<string> names;
+    auto operator<=>(S const&) const = default;
+};
+```
+
+=================================
+
+## Implications
+### Implementing comparisons for optional
+
+<pre><code data-trim data-noescape class="lang-cpp">
+template &lt;typename T, typename U&gt;
+<span class="fragment highlight-current-code" data-fragment-index=1>strong_ordering</span> operator<span class="fragment highlight-current-code" data-fragment-index=1>&lt;=&gt;</span>(optional&lt;T&gt; const& lhs, optional&lt;U&gt; const& rhs)
+{
+    if (lhs.has_value() && rhs.has_value()) return *lhs <span class="fragment highlight-current-code" data-fragment-index=1>&lt;=&gt;</span> *rhs;
+    return lhs.has_value() <span class="fragment highlight-current-code" data-fragment-index=1>&lt;=&gt;</span> rhs.has_value();
+}
+
+template &lt;typename T, typename U&gt;
+<span class="fragment highlight-current-code" data-fragment-index=1>bool</span> operator<span class="fragment highlight-current-code" data-fragment-index=1>==</span>(optional&lt;T&gt; const& lhs, optional&lt;U&gt; const& rhs)
+{
+    if (lhs.has_value() && rhs.has_value()) return *lhs <span class="fragment highlight-current-code" data-fragment-index=1>==</span> *rhs;
+    return lhs.has_value() <span class="fragment highlight-current-code" data-fragment-index=1>==</span> rhs.has_value();
+}
+</code></pre>
+
+=================================
+
+## Implications
+### What about strong_equality?
+
+```c++
+struct X {
+    int i;
+    strong_equality operator<=>(X const&) const = default;
+};
+```
+             
+                </script>
+                </section>
+			</div>
+		</div>
+
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.js"></script>
+		<script>
+			// More info about config & dependencies:
+			// - https://github.com/hakimel/reveal.js#configuration
+			// - https://github.com/hakimel/reveal.js#dependencies
+			Reveal.initialize({
+                slideNumber: 'c',
+            
+				dependencies: [
+					{ src: 'plugin/markdown/marked.js' },
+					{ src: 'plugin/markdown/markdown.js' },
+					{ src: 'plugin/notes/notes.js', async: true },
+					{ src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+                    { src: 'js/line-numbers.js' }
+				]
+			});
+		</script>
+	</body>
+</html>

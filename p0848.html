@@ -1,0 +1,270 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<title>P0848R0</title>
+
+		<link rel="stylesheet" href="css/reveal.css">
+		<link rel="stylesheet" href="css/theme/league.css">
+        <link rel="stylesheet" href="css/custom.css">
+        <link rel="stylesheet" href="css/line-numbers.css">
+
+		<!-- Theme used for syntax highlighting of code -->
+		<link rel="stylesheet" href="lib/css/atom-one-dark.css">
+        
+        <style>
+        .reveal .slides section .fragment.highlight-current-code {
+			opacity: 1;
+			visibility: inherit;
+        }
+
+        .reveal .slides section .fragment.highlight-current-code.current-fragment {
+			background: #b21057;
+        }            
+        
+        .emph {
+			color: #e7ad52 !important;
+		}
+        </style>
+
+		<!-- Printing and PDF exports -->
+		<script>
+			var link = document.createElement( 'link' );
+			link.rel = 'stylesheet';
+			link.type = 'text/css';
+			link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+			document.getElementsByTagName( 'head' )[0].appendChild( link );
+		</script>
+	</head>
+	<body>
+		<div class="reveal">
+			<div class="slides">
+				<section>
+                <h2>P0848R0</h2>
+                <b>Conditionally Trivial Special Member Functions</b>
+                </section>
+				<section>
+                <h3>Goal</h3>
+                <p style="text-align:left">Class template wrapper to match semantics of its template parameter
+                <ul>
+                <li>Copyable?
+                <li>Movable?
+                <li>Trivially copyable?
+                <li>Trivially destructible?
+                </ul>
+                </section>
+                <section data-markdown>
+                    <textarea data-template>
+                        ### Goal
+                    
+                        ```cpp
+                        // int
+                        static_assert(TriviallyCopyable<optional<int>>);
+                        
+                        // string
+                        static_assert(Copyable<optional<string>);
+                        static_assert(!TriviallyCopyable<optional<string>);
+                        
+                        // unique_ptr<int>
+                        static_assert(!Copyable<optional<unique_ptr<int>>);
+                        static_assert(Movable<optional<unique_ptr<int>>);
+                        ```
+                    </textarea>
+                </section>
+                <section>
+                <h3>Important for ABI</h3>
+				<pre class="small"><code data-trim data-noescape class="cpp">
+                    <div class="fragment highlight-current-code" data-fragment-index=1>std::optional&lt;int&gt;   f() { return 42; }</div><div class="fragment highlight-current-code" data-fragment-index=2>std::pair&lt;int, bool&gt; g() { return {42, true}; }</div>
+                 </code></pre>
+                 <pre class="small"><code data-trim data-noescape class="asm">
+                <div class="fragment highlight-current-code" data-fragment-index=1>f():
+                    mov rax, rdi
+                    mov DWORD PTR [rdi], 42
+                    mov BYTE PTR [rdi+4], 1
+                    ret</div><div class="fragment highlight-current-code" data-fragment-index=2>g():
+                    movabs rax, 4294967338 
+                    ret</div>
+                 </code></pre>
+                </section>
+                <section>
+                   <h3>Implementing this in C++17</h3>
+                   <h4>(Just the copy ctor and destructor)</h4>
+                   
+<pre><code data-trim data-noescape class="lang-cpp line-numbers">
+template &lt;typename T, bool trivial&gt;
+struct base_payload {
+    struct empty { };
+    union {
+        empty _;
+        T value;
+    };
+    bool engaged = false;
+    
+    base_payload() = default;
+    
+    base_payload(base_payload const& rhs)
+        : engaged(rhs.engaged)
+    {
+        if (rhs.engaged) {
+            new (&value) T(rhs.value);
+        }
+    }
+    
+    ~base_payload() {
+        if (engaged) value.~T();
+    }
+};
+
+template &lt;typename T&gt;
+struct base_payload&lt;T, true&gt; {
+    struct empty { };
+    union {
+        empty _;
+        T value;
+    };
+    bool engaged = false;
+    
+    base_payload() = default;
+    base_payload(base_payload const& ) = default;
+    ~base_payload() = default;
+};
+
+template &lt;bool allow_copying&gt;
+struct copy_enabler {
+    copy_enabler() = default;
+    copy_enabler(copy_enabler const& ) = delete;
+    ~copy_enabler() = default;
+};
+
+template &lt;&gt;
+struct copy_enabler&lt;true&gt; {
+    copy_enabler() = default;
+    copy_enabler(copy_enabler const& ) = default;
+    ~copy_enabler() = default;
+};
+
+template &lt;typename T&gt;
+class optional
+    : private copy_enabler&lt;std::is_copy_constructible_v&lt;T&gt;&gt;
+    , private base_payload&lt;T, std::is_trivially_copyable_v&lt;T&gt;&gt;
+{
+public:
+    using base_payload&lt;T&gt;::base_payload;
+    optional(optional const& ) = default;
+    ~optional() = default;
+};</code></pre>
+                </section>
+                <section>
+                <h3>What about C++20 and Concepts?</h3>
+                <ul>
+                <span class="fragment"><li>Constrain special member functions</li></span>
+                <span class="fragment"><li>Subsumption during overload resolution</li></span>
+                </ul>
+                </section>
+                <section>
+                <h3>What about C++20 and Concepts</h3>
+                <pre class="small"><code data-trim data-noescape class="cpp">
+template &lt;typename T&gt;
+class optional {   
+<div class="fragment highlight-current-code" data-fragment-index=2>    optional(optional const&)
+        requires TriviallyCopyable&lt;T&gt; && Copyable&lt;T&gt;
+        = default;</div>        
+<div class="fragment highlight-current-code" data-fragment-index=1>    optional(optional const& rhs) requires Copyable&lt;T&gt;
+        : engaged(rhs.engaged)
+    {
+        if (engaged) {
+            new (&value) T(rhs.value);
+        }
+    }</div>
+};</code></pre>
+                </section>
+                <section>
+                <h3>[class.prop]</h3>
+                <span style="font-size: 32px">
+                <p style="text-align:left">A <i>trivially copyable class</i> is a class:
+                <ul>
+                <li>where <span class="emph">each</span> copy constructor, move constructor, copy assignment operator, and move assignment operator ([class.copy.ctor], [class.copy.assign]) is either deleted or trivial,
+                <li>that has at least one non-deleted copy constructor, move constructor, copy assignment operator, or move assignment operator, and
+                <li>that has a trivial, non-deleted destructor.
+                </ul>
+                <p style="text-align:left">A <i>trivial class</i> is a class that is trivially copyable and has one or more default constructors ([class.default.ctor]), all of which are either trivial or deleted and at least one of which is not deleted.
+                </span>
+                </section>
+                <section>
+                <h3>[class.prop], proposed</h3>
+                <span style="font-size: 32px">
+                <p style="text-align:left">A <i>trivially copyable class</i> is a class:
+                <ul>
+                <li>where <span class="emph">each usable</span> copy constructor, move constructor, copy assignment operator, and move assignment operator ([class.copy.ctor], [class.copy.assign]) is either deleted or trivial,
+                <li>that has at least one <span class="emph">usable</span> non-deleted copy constructor, move constructor, copy assignment operator, or move assignment operator, and
+                <li>that has a <span class="emph">usable,</span> trivial, non-deleted destructor.
+                </ul>
+                <p style="text-align:left">A <i>trivial class</i> is a class that is trivially copyable and has one or more <span class="emph">usable</span> default constructors ([class.default.ctor]), all of which are either trivial or deleted and at least one of which is not deleted.
+                </span>
+                </section>                
+                <section>
+                <h3>Implementation with this change</h3>
+                <div style="display:flex">
+                <div style="flex: 1">
+                <pre class="small"><code data-trim data-noescape class="cpp" style="width:300px">
+template &lt;typename T&gt;
+class optional {
+  struct empty { };
+  union {
+    empty _;
+    T value;
+  };
+  bool engaged = false;
+
+public:
+  constexpr optional() =
+    default;
+    
+    
+      &nbsp;
+</code></pre></div>
+<div style="flex: 1">
+<pre class="small"><code data-trim data-noescape class="cpp stretch" style="width:700px">
+<div class="fragment highlight-current-code" data-fragment-index=1>  optional(optional const& )
+      requires TriviallyCopyable&lt;T&gt; && Copyable&lt;T&gt;
+    = default;
+  optional(optional const& rhs) requires Copyable&lt;T&gt;
+    : engaged(rhs.engaged)
+  {
+    if (rhs.engaged) {
+      new (&value) T(rhs.value);
+    }
+  }</div>    
+<div class="fragment highlight-current-code" data-fragment-index=2>  ~optional() requires TriviallyCopyable&lt;T&gt; = default;
+  ~optional() {
+    if (engaged) value.~T();
+  }</div>
+};
+</div>
+                </div>
+                </section>
+			</div>
+		</div>
+
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.js"></script>
+		<script>
+			// More info about config & dependencies:
+			// - https://github.com/hakimel/reveal.js#configuration
+			// - https://github.com/hakimel/reveal.js#dependencies
+			Reveal.initialize({
+                slideNumber: 'c',
+            
+				dependencies: [
+					{ src: 'plugin/markdown/marked.js' },
+					{ src: 'plugin/markdown/markdown.js' },
+					{ src: 'plugin/notes/notes.js', async: true },
+					{ src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+                    { src: 'js/line-numbers.js' }
+				]
+			});
+		</script>
+	</body>
+</html>
