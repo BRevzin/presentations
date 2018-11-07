@@ -190,42 +190,42 @@ Change defaulted equality operator meanings
   A a;
   B b;
    
-  <span class="fragment invisible-frag" data-fragment-index=1>auto operator&lt;=&gt;(X const&) const = default;  
-  bool operator==(X const&) const = default;
-  bool operator!=(X const&) const = default;</span><span class="fragment invisible-frag" data-fragment-index=2>auto operator&lt;=&gt;(X const&) const { /&ast; ... &ast;/ }
-  bool operator==(X const& rhs) const {
+  <span class="fragment invisible-frag" data-fragment-index=1>bool operator==(X const&) const = default;
+  bool operator!=(X const&) const = default;
+  auto operator&lt;=&gt;(X const&) const = default;  </span><span class="fragment invisible-frag" data-fragment-index=2>bool operator==(X const& rhs) const {
     return (&ast;this &lt;=&gt; rhs) == 0;
   }
   bool operator!=(X const& rhs) const {
     return (&ast;this &lt;=&gt; rhs) != 0;
-  }</span><span class="fragment invisible-frag" data-fragment-index=3>auto operator&lt;=&gt;(X const&) const { /&ast; ... &ast;/ }
-  bool operator==(X const& rhs) const {
+  }
+  auto operator&lt;=&gt;(X const&) const { /&ast; ... &ast;/ }</span><span class="fragment invisible-frag" data-fragment-index=3>bool operator==(X const& rhs) const {
     return (<span class="fragment highlight-current-code" data-fragment-index=3>&ast;this &lt;=&gt; rhs</span>) == 0;
   }
   bool operator!=(X const& rhs) const {
     return (<span class="fragment highlight-current-code" data-fragment-index=3>&ast;this &lt;=&gt; rhs</span>) != 0;
-  }</span>
+  }
+  auto operator&lt;=&gt;(X const&) const { /&ast; ... &ast;/ }</span>
 };</code></pre>    
 </td>
 <td><pre><code data-trim data-noescape class="lang-cpp">struct X {
   A a;
   B b;
    
-  <span class="fragment invisible-frag" data-fragment-index=1>auto operator&lt;=&gt;(X const&) const = default;
-  bool operator==(X const&) const = default;
-  bool operator!=(X const&) const = default;</span><span class="fragment invisible-frag" data-fragment-index=2>auto operator&lt;=&gt;(X const&) const { /&ast; ... &ast;/ }
-  bool operator==(X const& rhs) const {
+  <span class="fragment invisible-frag" data-fragment-index=1>bool operator==(X const&) const = default;
+  bool operator!=(X const&) const = default;
+  auto operator&lt;=&gt;(X const&) const = default;</span><span class="fragment invisible-frag" data-fragment-index=2>bool operator==(X const& rhs) const {
     return a == rhs.a && b == rhs.b;
   }
   bool operator!=(X const& rhs) const {
     return !(&ast;this == rhs);
-  }</span><span class="fragment invisible-frag" data-fragment-index=3>auto operator&lt;=&gt;(X const&) const { /&ast; ... &ast;/ }
-  bool operator==(X const& rhs) const {
+  }
+  auto operator&lt;=&gt;(X const&) const { /&ast; ... &ast;/ }</span><span class="fragment invisible-frag" data-fragment-index=3>bool operator==(X const& rhs) const {
     return <span class="fragment highlight-current-code" data-fragment-index=3>a == rhs.a && b == rhs.b</span>;
   }
   bool operator!=(X const& rhs) const {
     return !(<span class="fragment highlight-current-code" data-fragment-index=3>&ast;this == rhs</span>);
-  }</span>
+  }
+  auto operator&lt;=&gt;(X const&) const { /&ast; ... &ast;/ }</span>
 };</code></pre></td>
 </tr>
 </tbody>
