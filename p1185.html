@@ -4,7 +4,7 @@
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-		<title>P1185R0</title>
+		<title>P1185R1</title>
 
 		<link rel="stylesheet" href="css/reveal.css">
 		<link rel="stylesheet" href="css/theme/league.css">
@@ -50,246 +50,106 @@
                          data-separator-vertical="^----+$"
                          data-notes="^Note:">
                 <script type="text/template">                
-## P1185R0
-### `<=> != ==`
+## P1185R1
+### <span class="emph">`<=> != ==`</span>
 
 =================================
 
-## The problem 
+## Recap 1
 
 <pre><code data-trim data-noescape class="lang-cpp">
 struct S {
-    vector&lt;string&gt; names;<div class="fragment highlight-current-code" data-fragment-index="1">    auto operator&lt;=&gt;(S const&) const = default;</div>};
+    bool operator==(S const&) const;
+    strong_ordering operator&lt;=&gt;(S const&) const;
+};
+
+s1 != s2; // evaluates as !(s1 == s2), not (s1 <=> s2) != 0
 </code></pre>
 
 =================================
 
-## <=> for vector
+## Recap 2
 
 <pre><code data-trim data-noescape class="lang-cpp">
-template &lt;typename T&gt;
-strong_ordering operator&lt;=&gt;(vector&lt;T&gt; const& lhs, vector&lt;T&gt; const& rhs) {
-    size_t min_size = min(lhs.size(), rhs.size());
-    for (size_t i = 0; i != min_size; ++i) {
-        if (<span class="fragment highlight-current-code" data-fragment-index="1">auto const cmp = lhs[i] &lt;=&gt; rhs[i]</span>; cmp != 0) {
-            return cmp;
-        }
-    }
-    return <span class="fragment highlight-current-code" data-fragment-index="1">lhs.size() &lt;=&gt; rhs.size()</span>;
-}</code></pre>
-                
-=================================
-
-## == for vector
-
-<pre><code data-trim data-noescape class="lang-cpp">
-template &lt;typename T&gt;
-bool operator==(vector&lt;T&gt; const& lhs, vector&lt;T&gt; const& rhs) {
-    // early short-circuit
-    const size_t size = lhs.size();
-    if (size != rhs.size()) return false;
-
-    for (size_t i = 0; i != size; ++i) {
-        if (!(<span class="fragment highlight-current-code" data-fragment-index="1">lhs[i] == rhs[i]</span>)) {
-            return false;
-        }
-    }
-    return <span class="fragment highlight-current-code" data-fragment-index="1">true</span>;
-}</code></pre>
-
-<div class="fragment" data-fragment-index="2"><pre><code data-trim data-noescape class="lang-cpp">template &lt;typename T&gt;
-bool operator!=(vector&lt;T&gt; const& lhs, vector&lt;T&gt; const& rhs) {
-    return !(lhs == rhs);
-}</code></pre></div>
-                
-=================================
-
-## <=> for S?
-
-```c++
-struct S {
-    vector<string> names;
-    auto operator<=>(S const&) const = default;
-};
-```
-<div class="fragment" data-fragment-index="1"><pre><code data-trim data-noescape class="lang-cpp">s1 == s2;</code></pre></div>
-<div class="fragment" data-fragment-index="2"><pre><code data-trim data-noescape class="lang-cpp">(s1.names &lt;=&gt; s2.names) == 0;</code></pre></div>
-
-=================================
-
-## == for S???
-<pre><code data-trim data-noescape class="lang-cpp">
-struct S {
-    vector&lt;string&gt; names;
-    auto operator&lt;=&gt;(S const&) const = default;
-    <span class="fragment invisible-frag" data-fragment-index=1>bool operator==(S const&) const = default;</span><span class="fragment invisible-frag" data-fragment-index=2>bool operator==(S const& rhs) const {
-        return (*this &lt;=&gt; rhs) == 0;
-    }</span><span class="fragment invisible-frag" data-fragment-index=3>bool operator<span class="fragment highlight-current-code" data-fragment-index="3">==</span>(S const& rhs) const {
-        return (<span class="fragment highlight-current-code" data-fragment-index="3">*this &lt;=&gt; rhs</span>) == 0;
-    }</span>
-};
-</code></pre>
-                
-=================================
-
-## Optimal S
-
-```c++
-struct S {
-    vector<string> names;
-    auto operator<=>(S const&) const = default;
-    bool operator==(S const& rhs) const { return names == rhs.names; }
-    bool operator!=(S const& rhs) const { !(*this == rhs); }
-};
-```
-
-=================================
-
-## Proposal §2.1
-
-Change equality operator candidate rules
-
-<table>
-<thead>
-<tr><th>Source</th><th>C++20 WD</th><th>Proposed</th></tr>
-</thead>
-<tbody>
-<tr>
-<td><pre><code data-trim data-noescape class="lang-cpp">a == b</code></pre></td>
-<td><pre><code data-trim data-noescape class="lang-cpp">a == b
-(a &lt;=&gt; b) == 0
-0 == (b &lt;=&gt; a)</code></pre></td>
-<td><pre><code data-trim data-noescape class="lang-cpp">a == b
-b == a</code></pre></td>
-</tr>
-<tr>
-<td><pre><code data-trim data-noescape class="lang-cpp">a != b</code></pre></td>
-<td><pre><code data-trim data-noescape class="lang-cpp">a != b
-(a &lt;=&gt; b) != 0
-0 != (b &lt;=&gt; a)</code></pre></td>
-<td><pre><code data-trim data-noescape class="lang-cpp">a != b
-!(a == b)
-!(b == a)</code></pre></td>
-</tr>
-</tbody>
-</table>
-
-=================================
-
-## Proposal §2.2
-
-Change defaulted equality operator meanings
-
-<table>
-<thead>
-<tr><th>C++20 WD</th><th>Proposed</th></tr>
-</thead>
-<tbody>
-<tr>
-<td><pre><code data-trim data-noescape class="lang-cpp">struct X {
-  A a;
-  B b;
-   
-  <span class="fragment invisible-frag" data-fragment-index=1>bool operator==(X const&) const = default;
-  bool operator!=(X const&) const = default;
-  auto operator&lt;=&gt;(X const&) const = default;  </span><span class="fragment invisible-frag" data-fragment-index=2>bool operator==(X const& rhs) const {
-    return (&ast;this &lt;=&gt; rhs) == 0;
-  }
-  bool operator!=(X const& rhs) const {
-    return (&ast;this &lt;=&gt; rhs) != 0;
-  }
-  auto operator&lt;=&gt;(X const&) const { /&ast; ... &ast;/ }</span><span class="fragment invisible-frag" data-fragment-index=3>bool operator==(X const& rhs) const {
-    return (<span class="fragment highlight-current-code" data-fragment-index=3>&ast;this &lt;=&gt; rhs</span>) == 0;
-  }
-  bool operator!=(X const& rhs) const {
-    return (<span class="fragment highlight-current-code" data-fragment-index=3>&ast;this &lt;=&gt; rhs</span>) != 0;
-  }
-  auto operator&lt;=&gt;(X const&) const { /&ast; ... &ast;/ }</span>
-};</code></pre>    
-</td>
-<td><pre><code data-trim data-noescape class="lang-cpp">struct X {
-  A a;
-  B b;
-   
-  <span class="fragment invisible-frag" data-fragment-index=1>bool operator==(X const&) const = default;
-  bool operator!=(X const&) const = default;
-  auto operator&lt;=&gt;(X const&) const = default;</span><span class="fragment invisible-frag" data-fragment-index=2>bool operator==(X const& rhs) const {
-    return a == rhs.a && b == rhs.b;
-  }
-  bool operator!=(X const& rhs) const {
-    return !(&ast;this == rhs);
-  }
-  auto operator&lt;=&gt;(X const&) const { /&ast; ... &ast;/ }</span><span class="fragment invisible-frag" data-fragment-index=3>bool operator==(X const& rhs) const {
-    return <span class="fragment highlight-current-code" data-fragment-index=3>a == rhs.a && b == rhs.b</span>;
-  }
-  bool operator!=(X const& rhs) const {
-    return !(<span class="fragment highlight-current-code" data-fragment-index=3>&ast;this == rhs</span>);
-  }
-  auto operator&lt;=&gt;(X const&) const { /&ast; ... &ast;/ }</span>
-};</code></pre></td>
-</tr>
-</tbody>
-</table>
-             
-=================================
-
-## Proposal §2.3 [optional]
-
-Change meaning of *strong structural equality*
-
-<pre><code data-trim data-noescape class="lang-cpp">struct C {
-    int i;
-    bool operator==(C const&) const = default;
+struct C {
+    bool operator==(int) const;
 };
 
-template &lt;C x>
-struct Z { };</code></pre>
-
-=================================
-
-## Proposal §2.4 [optional]
-
-Implicitly generate defaulted `==` from defaulted `<=>`
-
-```c++
-struct S {
-    vector<string> names;
-    auto operator<=>(S const&) const = default;
-};
-```
-
-=================================
-
-## Implications
-### Implementing comparisons for optional
-
-<pre><code data-trim data-noescape class="lang-cpp">
-template &lt;typename T, typename U&gt;
-<span class="fragment highlight-current-code" data-fragment-index=1>strong_ordering</span> operator<span class="fragment highlight-current-code" data-fragment-index=1>&lt;=&gt;</span>(optional&lt;T&gt; const& lhs, optional&lt;U&gt; const& rhs)
-{
-    if (lhs.has_value() && rhs.has_value()) return *lhs <span class="fragment highlight-current-code" data-fragment-index=1>&lt;=&gt;</span> *rhs;
-    return lhs.has_value() <span class="fragment highlight-current-code" data-fragment-index=1>&lt;=&gt;</span> rhs.has_value();
-}
-
-template &lt;typename T, typename U&gt;
-<span class="fragment highlight-current-code" data-fragment-index=1>bool</span> operator<span class="fragment highlight-current-code" data-fragment-index=1>==</span>(optional&lt;T&gt; const& lhs, optional&lt;U&gt; const& rhs)
-{
-    if (lhs.has_value() && rhs.has_value()) return *lhs <span class="fragment highlight-current-code" data-fragment-index=1>==</span> *rhs;
-    return lhs.has_value() <span class="fragment highlight-current-code" data-fragment-index=1>==</span> rhs.has_value();
-}
+c == 42; // ok
+42 == c; // ok
+c != 42; // ok
+42 != c; // ok
 </code></pre>
 
 =================================
 
-## Implications
-### What about strong_equality?
+## Recap 3
 
-```c++
+<pre><code data-trim data-noescape class="lang-cpp">
 struct X {
-    int i;
-    strong_equality operator<=>(X const&) const = default;
+    int i, j;
+    // does member-wise equality
+    bool operator==(X const&) const = default;
 };
-```
+
+assert(X{1, 2} == X{1, 2});
+assert(X{1, 2} != X{1, 3});
+
+// X has Strong Structural Equality
+template &lt;X x&gt;
+struct Z { };
+
+Z&lt;X{1, 2}&gt; z;
+</code></pre>
+
+=================================
+
+## Recap 4
+
+<pre><code data-trim data-noescape class="lang-cpp">
+struct X {
+    int i, j;    
+    <span class="fragment highlight-current-code" data-fragment-index=1>auto operator&lt;=&gt;(X const&) const = default;</span>
+    <span class="fragment highlight-current-code" data-fragment-index=2>// bool operator==(X const&) const = default;</span>
+};
+
+assert(X{1, 2} == X{1, 2});
+assert(X{1, 2} != X{1, 3});
+
+// X has Strong Structural Equality
+template &lt;X x&gt;
+struct Z { };
+
+Z&lt;X{1, 2}&gt; z;
+</code></pre>
+
+=================================
+
+## CWG Question
+
+<pre><code data-trim data-noescape class="lang-cpp">
+template &lt;typename T&gt;
+struct wrapper {
+    T t;
+    auto operator&lt;=&gt;(wrapper const&) const = default;
+};
+wrapper&lt;int&gt;{} == wrapper&lt;int&gt;{}; // ok
+</code></pre>
+
+<div class="fragment" data-fragment-index="2"><pre><code data-trim data-noescape class="lang-cpp">
+struct OnlyEq {
+    bool operator==(OnlyEq const&) const;
+};
+wrapper&lt;OnlyEq&gt;{} == wrapper&lt;OnlyEq&gt;{}; // ok or not?
+</code></pre></div>
+
+<div class="fragment" data-fragment-index="3"><pre><code data-trim data-noescape class="lang-cpp">
+struct SpaceDeleted {
+    bool operator==(SpaceDeleted const&) const;
+    void operator&lt;=&gt;(SpaceDeleted const&) const = delete;
+};
+wrapper&lt;SpaceDeleted&gt;{} == wrapper&lt;SpaceDeleted&gt;{}; // ok or not?
+</code></pre></div>
              
                 </script>
                 </section>
