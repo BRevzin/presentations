@@ -244,7 +244,7 @@ struct Aggr2 {
     - <span class="fragment highlight-current-code" data-fragment-index=1>either use <span class="emph">`==`</span> then <span class="emph">`<`</span></span>
     - or just <span class="emph">`<`</span> twice
 - If `R` is `partial_ordering`, use <span class="emph">`==`</span> then <span class="emph">`<`</span> <i>twice</i>
-    
+- If `R` is `*_equality`, use <span class="emph">`==`</span>
 
 =================================
 
@@ -317,90 +317,66 @@ struct Y {
 
 =================================
 
-## Building Complexity 1a
+## Examples 5
 
 ```c++
-template <typename Cat, typename T>
-using fallback_to = conditional_t<
-    ThreeWayComparable<T>,   // See P1188
-    compare_3way_type_t<T>,  // See P1188
-    Cat>;
+struct Partial {
+    bool operator==(Partial const&) const;
+    bool operator<(Partial const&) const;
+};
+struct Total {
+    bool operator==(Total const&) const;
+    bool operator<(Total const&) const;
+};
 
-template <typename Cat, typename... Ts>
-using fallback_many_to = common_comparison_category_t<
-    fallback_to<Ts, Cat>...>;
+struct Y {
+    Partial p;
+    Total t;
+    // synthesizes partial_ordering for both
+    partial_ordering operator<=>(Y const&) const = defualt;
+};
 ```
 
 =================================
 
-## Building Complexity 1b
-
-<pre><code data-trim data-noescape class="lang-cpp">
-template &lt;typename Cat, typename T&gt;
-struct cmp_with_fallback {
-    T const& t;
-    <span class="fragment highlight-current-code" data-fragment-index=1>fallback_to&lt;T, Cat&gt; operator&lt;=&gt;(cmp_with_fallback const&) = default;</span>
-};
-template &lt;typename T, typename Cat&gt;
-concept FallbackThreeWayComparable =
-    ThreeWayComparable&lt;cmp_with_fallback&lt;Cat, T&gt;&gt;;
-
-template &lt;typename Cat&gt;
-inline constexpr auto synth_cmp =
-    []&lt;FallbackThreeWayComparable&lt;Cat&gt; T&gt;(T const& a, T const& b){
-        using C = cmp_with_fallback&lt;Cat, T&gt;;
-        return C{a} &lt;=&gt; C{b};
-    };
-</code></pre>
-
-=================================
-
-## Building Complexity 2
+## Examples 5b
 
 ```c++
-template <typename T, typename U>
-struct pair {
-    T first;
-    U second;
+struct Y {
+    struct Total2 : Total {
+        using Total::Total;
+        strong_ordering operator<=>(Total2 const&) const = default;
+    };
     
-    fallback_many_to<weak_ordering, T, U>
-    operator<=>(pair const&) = default;
+    Partial p;
+    Total2 t;
+    
+    // synthesizes partial_ordering for Partial and
+    // strong_ordering for Total
+    partial_ordering operator<=>(Y const&) const = default;
 };
 ```
 
-
 =================================
 
-## Building Complexity 3
+## Examples 5c
 
 ```c++
-template <FallbackThreeWayComparable<weak_ordering> T>
-auto operator<=>(vector<T> const& lhs, vector<T> const& rhs)
-{
-    return lexicographical_compare_3way(
-        lhs.begin(), lhs.end(), rhs.begin(), rhs.end(),
-        synth_cmp<weak_ordering>);
-}
+struct Y {
+    Partial p;
+    Total t;
+
+    bool operator==(Y const&) const = default;
+    partial_ordering operator<=>(Y const& rhs) const {
+        if (auto cmp = compare_3way_fallback<partial_ordering>(p, rhs.p);
+            cmp != 0) {
+            return cmp;
+        }
+        return compare_3way_fallback<strong_ordering>(t, rhs.t);
+    }
+};
 ```
 
-=================================
-
-## Building Complexity 4
-
-```c++
-inline constexpr auto compare_3way = synth_cmp<strong_ordering>;
-
-template <typename Cat>
-inline constexpr auto strict_synth_cmp = []<typename T>
-    requires FallbackThreeWayComparable<T, Cat> &&
-        ConvertibleTo<invoke_result_t<synth_cmp<Cat>,T const&,T const&>, Cat>
-    (T const& a, T const& b) -> Cat {
-        return synth_cmp(a, b);
-    };
-
-inline constexpr auto weak_order = strict_synth_cmp<weak_ordering>;
-inline constexpr auto partial_order = strict_synth_cmp<partial_ordering>;
-```
 
                 </script>
                 </section>
