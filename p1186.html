@@ -4,7 +4,7 @@
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-		<title>P1186R0</title>
+		<title>P1186R1</title>
 
 		<link rel="stylesheet" href="css/reveal.css">
 		<link rel="stylesheet" href="css/theme/league.css">
@@ -50,198 +50,357 @@
                          data-separator-vertical="^----+$"
                          data-notes="^Note:">
                 <script type="text/template">                
-## P1186R0
+## P1186R1
 ### When do you actually use <span class="emph">`<=>`</span>?
 
 =================================
 
-## Generic Code?
+## An Adoption Story
 
-<pre><code data-trim data-noescape class="lang-cpp">
-template &lt;typename T&gt;
-auto operator<span class="fragment highlight-current-code" data-fragment-index=1>&lt;=&gt;</span>(optional&lt;T&gt; const& lhs, optional&lt;T&gt; const& rhs)
-    -&gt; decltype(<span class="fragment highlight-current-code" data-fragment-index=1>*lhs &lt;=&gt; *rhs</span>)
-{
-    if (lhs.has_value() && rhs.has_value()) {
-        return <span class="fragment highlight-current-code" data-fragment-index=1>*lhs &lt;=&gt; *rhs</span>;
-    } else {
-        return <span class="fragment highlight-current-code" data-fragment-index=1>lhs.has_value() &lt;=&gt; rhs.has_value()</span>;
-    }
-}</code></pre>
-
-<div class="fragment" data-fragment-index=2><p>Unfortunately, this is wrong.</div>        
-
-=================================
-
-## Non-generic code?
-
-<pre><code data-trim data-noescape class="lang-cpp">
-// some perfectly functional C++17 type
-struct Ordered {
-    bool operator==(Ordered const&) const { ... }
-    bool operator!=(Ordered const&) const { ... }
-    bool operator&lt;(Ordered const&) const { ... }
-    // ...
+```c++
+struct Q {
+    bool operator==(Q const&) const;
+    bool operator<(Q const&) const;
 };
 
 struct Aggr {
     int i;
     char c;
-    Ordered o;
-    
-    <span class="fragment highlight-current-code" data-fragment-index=1>auto operator&lt;=&gt;(Aggr const&) const = default;</span>
-};</code></pre>
-    
-<div class="fragment" data-fragment-index=1><p>Unfortunately, this won't compile.</div>        
+    Q q;
+
+    bool operator==(Aggr const&) const = default;  // ok (P1185)
+    auto operator<=>(Aggr const&) const = default; // nope
+};
+```
 
 =================================
 
-### `std::compare_3way()`
-### Library <span class="emph">`<=>`</span>
+## An Adoption Story 2
 
 <pre><code data-trim data-noescape class="lang-cpp">
-constexpr inline auto compare_3way = boost::hof::first_of(
-    [](auto const& a, auto const& b)
-        BOOST_HOF_RETURNS(a <span class="emph"><=></span> b),
-    [](auto const& a, auto const& b) -> strong_ordering
-        requires StringTotallyOrderedWith&lt;decltype(a), decltype(b)>
-    {
-        if (a <span class="emph">==</span> b) return strong_ordering::equal;
-        return (a <span class="emph">&lt;</span> b) ? strong_ordering::less : strong_ordering::greater;
-    },
-    [](auto const& a, auto const& b) -> strong_equality
-        requires EqualityComparableWith&lt;decltype(a), decltype(b)>
-    {
-        return (a <span class="emph">==</span> b) ? strong_equality::equal : strong_equality::nonequal;
-    }
-);
+strong_ordering operator&lt;=&gt;(Aggr const& rhs) const
+{
+    if (auto cmp = i &lt;=&gt; rhs.i; cmp != 0) return cmp;
+    if (auto cmp = c &lt;=&gt; rhs.c; cmp != 0) return cmp;
+
+<div class="fragment highlight-current-code" data-fragment-index=1>    if (q == rhs.q) return strong_ordering::equal;
+    if (q < rhs.q)  return strong_ordering::less;
+    return strong_ordering::greater;</div>}
 </code></pre>
 
 =================================
 
-## Making Aggr Comparable
+## An Adoption Story 3
 
 <pre><code data-trim data-noescape class="lang-cpp">
+strong_ordering operator&lt;=&gt;(Aggr const& rhs) const
+{
+    if (auto cmp = i &lt;=&gt; rhs.i; cmp != 0) return cmp;
+    if (auto cmp = c &lt;=&gt; rhs.c; cmp != 0) return cmp;
+    return std::compare_3way(q, rhs.q);
+}
+</code></pre>
+
+=================================
+
+## An Adoption Story 4?
+
+<pre><code data-trim data-noescape class="lang-cpp">
+strong_ordering operator&lt;=&gt;(Aggr const& rhs) const
+{
+    if (auto cmp = std::compare_3way(i, rhs.i); cmp != 0) return cmp;
+    if (auto cmp = std::compare_3way(c, rhs.c); cmp != 0) return cmp;
+    return std::compare_3way(q, rhs.q);
+}
+</code></pre>
+
+<div class="fragment" data-fragment-index="1"><pre><code data-trim data-noescape class="lang-cpp">
 struct Aggr {
     int i;
     char c;
-    Ordered o;
-    
-    ???? operator&lt;=&gt;(Aggr const& rhs) const {
-        if (auto cmp = <span class="fragment highlight-current-code" data-fragment-index=1>i &lt;=&gt; rhs.i</span>; cmp != 0) return cmp;
-        if (auto cmp = <span class="fragment highlight-current-code" data-fragment-index=1>c &lt;=&gt; rhs.c</span>; cmp != 0) return cmp;
-        return <span class="fragment highlight-current-code" data-fragment-index=2>std::compare_3way(o, rhs.o)</span>;
-    }
-};</code></pre>
+    Q q;
+
+    auto operator<=>(Aggr const&) const = default; // ok per P1186R0
+};</code></pre></div>
+
+<div class="fragment" data-fragment-index="2"><pre><code data-trim data-noescape class="lang-cpp">
+Q{} &lt;=&gt; Q{}; // ok per P1186R0, returns strong_ordering</code></pre></div>
 
 =================================
 
-## Making Aggr Comparable 2
+## Why not automatic synthesis
 
 <pre><code data-trim data-noescape class="lang-cpp">
-struct Aggr {
+struct Q {
+    float f;
+    bool operator==(Q rhs) const { return f == rhs.f; }
+    bool operator< (Q rhs) const { return f < rhs.f;  }
+    bool operator> (Q rhs) const { return f > rhs.f;  }
+};
+</code></pre>
+
+<div class="fragment" data-fragment-index="1"><pre><code data-trim data-noescape class="lang-cpp">
+Q{1.0f} == Q{NAN}; // false
+Q{1.0f} < Q{NAN};  // false
+Q{1.0f} > Q{NAN};  // false
+</code></pre></div>
+
+<div class="fragment" data-fragment-index="2"><pre><code data-trim data-noescape class="lang-cpp">
+Q{1.0f} > Q{NAN};       // false
+Q{1.0f} &lt;=&gt; Q{NAN} > 0; // true per P1186R0?!
+</code></pre></div>
+
+=================================
+
+## Why not automatic synthesis 2
+
+<pre><code data-trim data-noescape class="lang-cpp">
+partial_ordering operator&lt;=&gt;(Q const& a, Q const& b)
+{
+    if (a == b) return partial_ordering::equivalent;
+    if (a < b)  return partial_ordering::less;
+    <span class="fragment highlight-current-code" data-fragment-index=1>if (b < a)  return partial_ordering::greater;</span>
+    return partial_ordering::unordered;
+}
+</code></pre>
+
+
+=================================
+
+## Goal
+
+- allow types like <span class="emph">`Aggr`</span> which just want the simple, default, member-wise comparisons to express that with as little typing as possible
+- no incorrect answers synthesized
+- no overhead over handwritten equivalent
+
+=================================
+
+## Proposal: Use the Return type
+
+```c++
+Q{} <=> Q{}; // still ill-formed, no change
+
+struct Aggr1 {
     int i;
     char c;
-    Ordered o;
-    
-    ???? operator&lt;=&gt;(Aggr const& rhs) const {
-        if (auto cmp = <span class="fragment highlight-current-code" data-fragment-index=1>std::compare_3way(i, rhs.i)</span>; cmp != 0) return cmp;
-        if (auto cmp = <span class="fragment highlight-current-code" data-fragment-index=1>std::compare_3way(c, rhs.c)</span>; cmp != 0) return cmp;
-        return <span class="fragment highlight-current-code" data-fragment-index=1>std::compare_3way(o, rhs.o)</span>;
-    }
-};</code></pre>
+    Q q;
+
+    // still defined as deleted, no change from status quo
+    auto operator<=>(Aggr1 const&) const = default;
+};
+```
 
 =================================
 
-## Making Optional Comparable
+## Proposal: Use the Return type 2
 
 <pre><code data-trim data-noescape class="lang-cpp">
-template &lt;typename T&gt;
-auto operator<span class="fragment highlight-current-code" data-fragment-index=1>&lt;=&gt;</span>(optional&lt;T&gt; const& lhs, optional&lt;T&gt; const& rhs)
-    -&gt; decltype(<span class="fragment highlight-current-code" data-fragment-index=1>std::compare_3way(*lhs, *rhs)</span>)
+struct Aggr2 {
+    int i;
+    char c;
+    Q q;
+
+    // ok: I, the author of Aggr, promise that Q 
+    // is in fact strongly ordered
+    <span class="fragment highlight-current-code" data-fragment-index=1>strong_ordering</span> operator<=>(Aggr2 const&) const = default;
+};
+</code></pre>
+
+=================================
+
+## What does it do
+
+<pre><code data-trim data-noescape class="lang-cpp">
+<span class="fragment highlight-current-code" data-fragment-index=1>strong_ordering</span> operator&lt;=&gt;(Aggr const& rhs) const {
+    if (auto cmp = i &lt;=&gt; rhs.i; cmp != 0) return cmp;
+    if (auto cmp = c &lt;=&gt; rhs.c; cmp != 0) return cmp;
+    
+<div class="fragment highlight-current-code" data-fragment-index=1>    // synthesizing strong_ordering from == and <
+    if (q == rhs.q) return strong_ordering::equal;
+    if (q < rhs.q) return strong_ordering::less;
+    [[ assert: rhs.q < q; ]] // maybe a sanitizer would add this check?
+    return strong_ordering::greater;</div>}
+</code></pre>
+
+=================================
+
+## Today's Rule
+
+<p>The return value `V` of type `R` of the defaulted three-way comparison operator function with parameters `x` and `y` of the same type is determined by comparing corresponding elements <code>x<sub>i</sub></code> and <code>y<sub>i</sub></code> in the expanded lists of subobjects for `x` and `y` until the first index `i` where <span class="emph"><code>x<sub>i</sub> &lt;=&gt; y<sub>i</sub></code></span> yields a result value <code>v<sub>i</sub></code> where <code>x<sub>i</sub> != 0</code>, contextually converted to `bool`, yields `true`; `V` is <code>v<sub>i</sub></code> converted to `R`. If no such index exists, `V` is `std::strong_ordering::equal` converted to `R`.
+
+=================================
+
+## Proposed Rule
+
+<p>The return value `V` of type `R` of the defaulted three-way comparison operator function with parameters `x` and `y` of the same type is determined by comparing corresponding elements <code>x<sub>i</sub></code> and <code>y<sub>i</sub></code> in the expanded lists of subobjects for `x` and `y` until the first index `i` where <span class="emph"><code>3WAY&lt;R&gt;(x<sub>i</sub>, y<sub>i</sub>)</code></span> yields a result value <code>v<sub>i</sub></code> where <code>x<sub>i</sub> != 0</code>, contextually converted to `bool`, yields `true`; `V` is <code>v<sub>i</sub></code> converted to `R`. If no such index exists, `V` is `std::strong_ordering::equal` converted to `R`.
+
+=================================
+
+## `3WAY<R>`
+
+- Use <span class="emph">`<=>`</span> if it exists
+- If `R` is `strong_ordering`, use <span class="emph">`==`</span> then <span class="emph">`<`</span>
+- If `R` is `weak_ordering`
+    - <span class="fragment highlight-current-code" data-fragment-index=1>either use <span class="emph">`==`</span> then <span class="emph">`<`</span></span>
+    - or just <span class="emph">`<`</span> twice
+- If `R` is `partial_ordering`, use <span class="emph">`==`</span> then <span class="emph">`<`</span> <i>twice</i>
+    
+
+=================================
+
+## Examples 1
+
+```c++
+struct X {
+    bool operator<(X const&) const;
+};
+
+struct Y {
+    X x;
+
+    // defined as deleted
+    strong_ordering operator<=>(Y const&) const = default;
+};
+```
+
+=================================
+
+## Examples 2
+
+```c++
+struct X {
+    bool operator<(X const&) const;
+};
+
+struct Y {
+    X x;
+
+    // synthesizes a weak ordering from <
+    weak_ordering operator<=>(Y const&) const = default;
+};
+```
+
+=================================
+
+## Examples 3
+
+```c++
+struct X {
+    weak_ordering operator<=>(X const&) const;
+};
+
+struct Y {
+    X x;
+
+    // defined as deleted
+    strong_ordering operator<=>(Y const&) const = default;
+};
+```
+
+=================================
+
+## Examples 4
+
+```c++
+struct X {
+    bool operator==(X const&) const;
+    bool operator<(X const&) const;
+};
+
+struct Y {
+    X x;
+
+    // defined as defaulted
+    partial_ordering operator<=>(Y const&) const = default;
+};
+```
+
+=================================
+
+## Building Complexity 1a
+
+```c++
+template <typename Cat, typename T>
+using fallback_to = conditional_t<
+    ThreeWayComparable<T>,   // See P1188
+    compare_3way_type_t<T>,  // See P1188
+    Cat>;
+
+template <typename Cat, typename... Ts>
+using fallback_many_to = common_comparison_category_t<
+    fallback_to<Ts, Cat>...>;
+```
+
+=================================
+
+## Building Complexity 1b
+
+<pre><code data-trim data-noescape class="lang-cpp">
+template &lt;typename Cat, typename T&gt;
+struct cmp_with_fallback {
+    T const& t;
+    <span class="fragment highlight-current-code" data-fragment-index=1>fallback_to&lt;T, Cat&gt; operator&lt;=&gt;(cmp_with_fallback const&) = default;</span>
+};
+template &lt;typename T, typename Cat&gt;
+concept FallbackThreeWayComparable =
+    ThreeWayComparable&lt;cmp_with_fallback&lt;Cat, T&gt;&gt;;
+
+template &lt;typename Cat&gt;
+inline constexpr auto synth_cmp =
+    []&lt;FallbackThreeWayComparable&lt;Cat&gt; T&gt;(T const& a, T const& b){
+        using C = cmp_with_fallback&lt;Cat, T&gt;;
+        return C{a} &lt;=&gt; C{b};
+    };
+</code></pre>
+
+=================================
+
+## Building Complexity 2
+
+```c++
+template <typename T, typename U>
+struct pair {
+    T first;
+    U second;
+    
+    fallback_many_to<weak_ordering, T, U>
+    operator<=>(pair const&) = default;
+};
+```
+
+
+=================================
+
+## Building Complexity 3
+
+```c++
+template <FallbackThreeWayComparable<weak_ordering> T>
+auto operator<=>(vector<T> const& lhs, vector<T> const& rhs)
 {
-    if (lhs.has_value() && rhs.has_value()) {
-        return <span class="fragment highlight-current-code" data-fragment-index=1>std::compare_3way(*lhs, *rhs)</span>;
-    } else {
-        return <span class="fragment highlight-current-code" data-fragment-index=1>std::compare_3way(lhs.has_value(), rhs.has_value())</span>;
-    }
-}</code></pre>
+    return lexicographical_compare_3way(
+        lhs.begin(), lhs.end(), rhs.begin(), rhs.end(),
+        synth_cmp<weak_ordering>);
+}
+```
 
 =================================
 
-## When do you use <span class="emph">`<=>`</span>?
+## Building Complexity 4
 
-<p>To implement <span class="emph">`std::compare_3way()`</span></code>.
+```c++
+inline constexpr auto compare_3way = synth_cmp<strong_ordering>;
 
-=================================
+template <typename Cat>
+inline constexpr auto strict_synth_cmp = []<typename T>
+    requires FallbackThreeWayComparable<T, Cat> &&
+        ConvertibleTo<invoke_result_t<synth_cmp<Cat>,T const&,T const&>, Cat>
+    (T const& a, T const& b) -> Cat {
+        return synth_cmp(a, b);
+    };
 
-## Seems familiar
-
-<p><span class="emph">`f(x)`</span> is to <span class="emph">`std::invoke(f, x)`</span> <p>as <p><span class="emph">`f <=> x`</span> is to <span class="emph">`std::compare_3way(f, x)`</span>
-
-=================================
-
-## Proposal
-
-<p>Make <span class="emph">`<=>`</span> mean <span class="emph">`std::compare_3way()`</span>
-
-<table>
-<thead><tr><th>C++20 WD</th><th>Proposed</th></tr></thead>
-<tbody><tr><td><pre><code data-trim data-noescape class="lang-cpp">struct Aggr {
-  int i;
-  char c;
-  Ordered o;
-
-  ???? operator&lt;=&gt;(Aggr const& rhs) const {
-    if (auto cmp = compare_3way(i, rhs.i);
-        cmp != 0)
-      return cmp;
-    if (auto cmp = compare_3way(c, rhs.c);
-        cmp != 0)
-      return cmp;
-    return compare_3way(o, rhs.o);
-  }
-};</code></pre></td><td><pre><code data-trim data-noescape class="lang-cpp">struct Aggr {
-  int i;
-  char c;
-  Ordered o;
-
-  auto operator&lt;=&gt;(Aggr const&) const = default;
-};</code></pre></td></tr></tbody>
-</table>
-
-=================================
-
-## Proposal
-
-<p>Make <span class="emph">`<=>`</span> mean <span class="emph">`std::compare_3way()`</span>
-
-<table>
-<thead><tr><th>C++20 WD</th><th>Proposed</th></tr></thead>
-<tbody><tr><td><pre><code data-trim data-noescape class="lang-cpp">template &lt;typename T&gt;
-auto operator&lt;=&gt;(optional&lt;T&gt; const& lhs,
-        optional&lt;T&gt; const& rhs)
-    -> decltype(<span class="fragment highlight-current-code" data-fragment-index=1>std::compare_3way(&ast;lhs, &ast;rhs)</span>)
-{
-  if (lhs.has_value() && rhs.has_value()) {
-    return <span class="fragment highlight-current-code" data-fragment-index=1>std::compare_3way(&ast;lhs, &ast;rhs)</span>;
-  } else {
-    return <span class="fragment highlight-current-code" data-fragment-index=1>std::compare_3way(lhs.has_value(),
-        rhs.has_value())</span>;
-  }
-}</code></pre></td><td><pre><code data-trim data-noescape class="lang-cpp">template &lt;typename T&gt;
-auto operator&lt;=&gt;(optional&lt;T&gt; const& lhs,
-        optional&lt;T&gt; const& rhs)
-    -> decltype(<span class="fragment highlight-current-code" data-fragment-index=1>&ast;lhs &lt;=&gt; &ast;rhs</span>)
-{
-  if (lhs.has_value() && rhs.has_value()) {
-    return <span class="fragment highlight-current-code" data-fragment-index=1>&ast;lhs &lt;=&gt; &ast;rhs</span>;
-  } else {
-    return <span class="fragment highlight-current-code" data-fragment-index=1>lhs.has_value() &lt;=&gt; rhs.has_value()</span>;
-  }
-}</code></pre></td></tbody>
-</table>
-
+inline constexpr auto weak_order = strict_synth_cmp<weak_ordering>;
+inline constexpr auto partial_order = strict_synth_cmp<partial_ordering>;
+```
 
                 </script>
                 </section>
