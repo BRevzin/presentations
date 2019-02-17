@@ -1,0 +1,227 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<title>P1170R0</title>
+
+		<link rel="stylesheet" href="css/reveal.css">
+		<link rel="stylesheet" href="css/theme/league.css">
+        <link rel="stylesheet" href="css/custom.css">
+        <link rel="stylesheet" href="css/line-numbers.css">
+
+		<!-- Theme used for syntax highlighting of code -->
+		<link rel="stylesheet" href="lib/css/atom-one-dark.css">
+        
+        <style>
+        .reveal .slides section .fragment.highlight-current-code {
+			opacity: 1;
+			visibility: inherit;
+        }
+
+        .reveal .slides section .fragment.highlight-current-code.current-fragment {
+			background: #b21057;
+        }            
+        
+        .emph {
+			color: #e7ad52 !important;
+		}
+        
+        .invisible-frag.fragment:not(.current-fragment) {
+            display: none !important;
+        }
+        </style>
+
+		<!-- Printing and PDF exports -->
+		<script>
+			var link = document.createElement( 'link' );
+			link.rel = 'stylesheet';
+			link.type = 'text/css';
+			link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+			document.getElementsByTagName( 'head' )[0].appendChild( link );
+		</script>
+	</head>
+	<body>
+		<div class="reveal">
+			<div class="slides">
+                <section data-markdown=""
+                         data-separator="^====+$"
+                         data-separator-vertical="^----+$"
+                         data-notes="^Note:">
+                <script type="text/template">                
+## P1170
+### Overload Sets as Function Parameters
+
+=================================
+
+## Thought Experiment
+
+```c++
+namespace N {
+    struct X { ... };
+    X getX();
+}
+
+func(N::getX());
+```
+
+=================================
+
+## Abstraction
+
+```c++
+template <typename F>
+void algorithm(F f, N::X x) {
+    f(x);
+}
+
+// same func as before
+algorithm(func, N::getX());
+```
+
+=================================
+
+## Failure Cases
+
+<ul>
+<span class="fragment"><li>`func()` could take default arguments</li></span>
+<span class="fragment"><li>`func()` could name a function template</li></span>
+<span class="fragment"><li>`func()` could name an overload set</li></span>
+<span class="fragment"><li>`func()` could have been found by ADL</li></span>
+<span class="fragment"><li>`func()` could be a non-static member function</li></span>
+<span class="fragment"><li>`func()` could be a partial member access (i.e. `obj.func(x)`)</li></span>
+<span class="fragment"><li>`func()` could be a standard library function</li></span>
+</ul>
+
+=================================
+
+## The Solution?
+
+```c++
+#define FWD(x) static_cast<decltype(x)&&>(x)
+#define RETURNS(expr) noexcept(noexcept(expr)) -> decltype(expr) \
+    { return expr; }
+#define OVERLOADS_OF(name) [&](auto&& ...args) RETURNS(name(FWD(args)...))
+
+algorithm(OVERLOADS_OF(func), N::getX());
+```
+
+=================================
+
+## What if it "Just Works"?
+
+```c++
+void simple(N::X );
+
+algorithm(simple, N::getX());
+```
+
+<span class="fragment">Any change to `simple()` is breaking... </span>
+
+=================================
+
+## History
+
+<ul>
+<span class="fragment"><li>P0119: <pre><code class="lang-cpp">// just works
+algorithm(func, N::getX())</code></pre></li></span>
+<span class="fragment"><li>P0834: <pre><code class="lang-cpp">// caller opt-in
+algorithm([]func, N::getX())</code></pre></li></span>
+<span class="fragment"><li>P0573: <pre><code class="lang-cpp">// caller opt-in, not point-free
+algorithm((e) => func(e), N::getX())</code></pre></li></span>
+</ul>
+
+=================================
+
+## Proposal
+
+<pre><code data-trim data-noescape class="lang-cpp">
+template &lt;typename F, typename... Args>
+void algorithm(<span class="fragment highlight-current-code" data-fragment-index=1>std::overload_set&lt;F></span> f, Args... args) {
+    f(args...);
+}
+</code></pre>
+
+<div class="fragment" data-fragment-index="2"><pre><code data-trim data-noescape class="lang-cpp">
+void foo(int);        // #1
+void foo(int, int);   // #2
+
+algorithm(<span class="fragment highlight-current-code" data-fragment-index=3>foo</span>, 1);    // ok: calls #1
+algorithm(<span class="fragment highlight-current-code" data-fragment-index=3>foo</span>, 2, 3); // ok: calls #2
+</code></pre></div>
+
+=================================
+
+## Just... Works
+
+```c++
+template <typename F>
+void call_with_42(std::overload_set<F> f) { f(42); }
+
+void g(int, int=0);
+template <typename T> void h(T);
+void j(char);
+void j(int);
+void j(double);
+
+call_with_42([](int){}); // ok
+call_with_42(g);         // ok
+call_with_42(h);         // ok
+call_with_42(j);         // ok
+```
+
+=================================
+
+## Can deduce objects too
+
+```c++
+std::overload_set f = [](int i){ return i * i;};
+std::overload_set g = std::max;
+
+assert(f(4) == 16);
+assert(g(2, 3) == 3);
+assert(g({4, 2, 7, 1}) == 7);
+```
+
+=================================
+
+## Interaction with Concepts
+
+```c++
+template <Invocable<int> F>
+void call_with_42(std::overload_set<F> f) {
+    f(42);
+}
+```
+
+
+
+
+
+                </script>
+                </section>
+			</div>
+		</div>
+
+        
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.js"></script>
+		<script>
+			// More info about config & dependencies:
+			// - https://github.com/hakimel/reveal.js#configuration
+			// - https://github.com/hakimel/reveal.js#dependencies
+			Reveal.initialize({
+                slideNumber: 'c',
+            
+				dependencies: [
+					{ src: 'plugin/markdown/marked.js' },
+					{ src: 'plugin/markdown/markdown.js' },
+					{ src: 'plugin/notes/notes.js', async: true },
+					{ src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+                    { src: 'js/line-numbers.js' }
+				]
+			});
+		</script>
+	</body>
+</html>
