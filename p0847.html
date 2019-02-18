@@ -1,0 +1,491 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<title>P0847</title>
+
+		<link rel="stylesheet" href="css/reveal.css">
+		<link rel="stylesheet" href="css/theme/league.css">
+        <link rel="stylesheet" href="css/custom.css">
+        <link rel="stylesheet" href="css/line-numbers.css">
+
+		<!-- Theme used for syntax highlighting of code -->
+		<link rel="stylesheet" href="lib/css/atom-one-dark.css">
+        
+        <style>
+        .reveal .slides section .fragment.highlight-current-code {
+			opacity: 1;
+			visibility: inherit;
+        }
+
+        .reveal .slides section .fragment.highlight-current-code.current-fragment {
+			background: #b21057;
+        }            
+        
+        .emph {
+			color: #e7ad52 !important;
+		}
+        
+        .invisible-frag.fragment:not(.current-fragment) {
+            display: none !important;
+        }
+        </style>
+
+		<!-- Printing and PDF exports -->
+		<script>
+			var link = document.createElement( 'link' );
+			link.rel = 'stylesheet';
+			link.type = 'text/css';
+			link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+			document.getElementsByTagName( 'head' )[0].appendChild( link );
+		</script>
+	</head>
+	<body>
+		<div class="reveal">
+			<div class="slides">
+                <section data-markdown=""
+                         data-separator="^====+$"
+                         data-separator-vertical="^----+$"
+                         data-notes="^Note:">
+                <script type="text/template">                
+## P0847
+### Deducing <span class="emph">this</span>
+
+=================================
+## Problem 1: Deduplication
+
+```c++
+template <typename T>
+struct optional {
+  constexpr T&        operator*() &       { return m_value; }
+  constexpr T const&  operator*() const&  { return m_value; }
+  constexpr T&&       operator*() &&      { return move(m_value); }
+  constexpr T const&& operator*() const&& { return move(m_value); }
+
+  constexpr T& value() & {
+    if (has_value()) return m_value;
+    throw bad_optional_access();
+  }
+
+  constexpr T const& value() const& {
+    if (has_value()) return m_value;
+    throw bad_optional_access();
+  }
+
+  constexpr T&& value() && {
+    if (has_value()) return move(m_value);
+    throw bad_optional_access();
+  }
+
+  constexpr T const&& value() const&& {
+    if (has_value()) return move(m_value);
+    throw bad_optional_access();
+  }
+};
+```
+
+=================================
+
+## Problem 1: Duplication
+
+```c++
+template <typename T>
+struct optional {
+  template <typename F>
+  constexpr auto and_then(F&& f) & {
+    using result =
+      invoke_result_t<F, T&>;
+    static_assert(
+      is_optional<result>::value,
+      "F must return an optional");
+
+    return has_value()
+        ? invoke(forward<F>(f), **this)
+        : nullopt;
+  }
+
+  template <typename F>
+  constexpr auto and_then(F&& f) && {
+    using result =
+      invoke_result_t<F, T&&>;
+    static_assert(
+      is_optional<result>::value,
+      "F must return an optional");
+
+    return has_value()
+        ? invoke(forward<F>(f), move(**this))
+        : nullopt;
+  }
+
+  template <typename F>
+  constexpr auto and_then(F&& f) const& {
+    using result =
+      invoke_result_t<F, T const&>;
+    static_assert(
+      is_optional<result>::value,
+      "F must return an optional");
+
+    return has_value()
+        ? invoke(forward<F>(f), **this)
+        : nullopt;
+  }
+
+  template <typename F>
+  constexpr auto and_then(F&& f) const&& {
+    using result =
+      invoke_result_t<F, T const&&>;
+    static_assert(
+      is_optional<result>::value,
+      "F must return an optional");
+
+    return has_value()
+        ? invoke(forward<F>(f), move(**this))
+        : nullopt;
+  }
+};
+```
+
+=================================
+
+## Solution 1: Deduce <span class="emph">this</span>
+
+<pre><code data-trim data-noescape class="lang-cpp">
+template &lt;typename T&gt;
+struct optional {
+  template &lt;typename Self&gt;
+  constexpr auto&& operator*(<span class="fragment highlight-current-code" data-fragment-index=1>this Self&& self</span>) {
+    return forward&lt;Self&gt;(<span class="fragment highlight-current-code" data-fragment-index=2>self</span>).m_value;
+  }
+  
+  template &lt;typename Self&gt;
+  constexpr auto&& value(<span class="fragment highlight-current-code" data-fragment-index=1>this Self&& self</span>) {
+    if (<span class="fragment highlight-current-code" data-fragment-index=2>self</span>.has_value()) return forward&lt;Self&gt;(<span class="fragment highlight-current-code" data-fragment-index=2>self</span>).m_value;
+    throw bad_optional_access();
+  }  
+};
+</code></pre>
+
+=================================
+
+## Solution 1: Deduce <span class="emph">this</span>
+
+<pre><code data-trim data-noescape class="lang-cpp">
+template &lt;typename T&gt;
+struct optional {
+  template &lt;typename Self, typename F&gt;
+  constexpr auto and_then(<span class="fragment highlight-current-code" data-fragment-index=1>this Self&& self</span>, F&& f) {
+    using val = decltype((forward&lt;Self&gt;(<span class="fragment highlight-current-code" data-fragment-index=2>self</span>).m_value));
+    using result = invoke_result_t&lt;F, val&gt;;
+
+    static_assert(is_optional&lt;result&gt;::value,
+      "F must return an optional");
+
+    return <span class="fragment highlight-current-code" data-fragment-index=2>self</span>.has_value()
+        ? invoke(forward&lt;F&gt;(f), forward&lt;Self&gt;(<span class="fragment highlight-current-code" data-fragment-index=2>self</span>).m_value)
+        : nullopt;
+  }
+};
+</code></pre>
+
+=================================
+
+## Problem 2: CRTP
+
+```c++
+template <typename Derived>
+struct add_postfix_increment {
+    Derived operator++(int) {
+        auto& self = static_cast<Derived&>(*this);
+
+        Derived tmp(self);
+        ++self;
+        return tmp;
+    }
+};
+
+struct some_type : add_postfix_increment<some_type> {
+    some_type& operator++() { ... }
+};
+```
+
+=================================
+
+Problem #2: CRTP (Builder)
+
+```c++
+struct Builder {
+  Builder& a() { /* ... */; return *this; }
+  Builder& b() { /* ... */; return *this; }
+  Builder& c() { /* ... */; return *this; }
+};
+```
+
+=================================
+
+Problem #2: CRTP (Builder)
+
+```c++
+template <typename D=void>
+class Builder {
+  using Derived = conditional_t<is_void_v<D>, Builder, D>;
+  Derived& self() { return *static_cast<Derived*>(this); }
+public:
+  Derived& a() { /* ... */; return self(); }
+  Derived& b() { /* ... */; return self(); }
+  Derived& c() { /* ... */; return self(); }
+};
+
+struct Special : Builder<Special> {
+  Special& d() { /* ... */; return *this; }
+  Special& e() { /* ... */; return *this; }
+};
+```
+
+=================================
+
+Problem #2: CRTP (Builder)
+
+```c++
+template <typename D=void>
+class Builder {
+protected:
+  using Derived = conditional_t<is_void_v<D>, Builder, D>;
+  Derived& self() { return *static_cast<Derived*>(this); }
+public:
+  Derived& a() { /* ... */; return self(); }
+  Derived& b() { /* ... */; return self(); }
+  Derived& c() { /* ... */; return self(); }
+};
+
+template <typename D=void>
+struct Special : Builder<conditional_t<is_void_v<D>,Special<D>,D>
+{
+  using Derived = typename Special::Builder::Derived;
+  Derived& d() { /* ... */; return this->self(); }
+  Derived& e() { /* ... */; return this->self(); }
+};
+
+struct Super : Special<Super>
+{
+  Super& f() { /* ... */; return *this; }
+};
+```
+=================================
+
+## Solution 2: Deduce <span class="emph">this</span>
+
+<pre><code data-trim data-noescape class="lang-cpp">
+struct add_postfix_increment {
+    template &lt;typename Self&gt;
+    auto operator++(<span class="fragment highlight-current-code" data-fragment-index=1>this Self&& self</span>, int) {
+        auto tmp = <span class="fragment highlight-current-code" data-fragment-index=1>self</span>;
+        ++<span class="fragment highlight-current-code" data-fragment-index=1>self</span>;
+        return tmp;
+    }
+};
+
+struct some_type : add_postfix_increment {
+    some_type& operator++() { ... }
+};
+</code></pre>
+
+=================================
+
+## Solution 2: Deduce <span class="emph">this</span>
+
+<pre><code data-trim data-noescape class="lang-cpp">
+struct Builder {
+    template &lt;typename Self&gt; Self& a(this Self&& self) { return self; }
+    template &lt;typename Self&gt; Self& b(this Self&& self) { return self; }
+    template &lt;typename Self&gt; Self& c(this Self&& self) { return self; }
+};
+
+struct Special : Builder {
+    template &lt;typename Self&gt; Self& d(this Self&& self) { return self; }
+    template &lt;typename Self&gt; Self& e(this Self&& self) { return self; }
+};
+
+struct Super : Special {
+    template &lt;typename Self&gt; Self& f(this Self&& self) { return self; }
+};
+</code></pre>
+
+=================================
+
+## Problem 3: Recursive Lambdas
+
+Can't do it in the language at all
+
+## Solution 3: Deduce <span class="emph">this</span>
+
+```c++
+auto fib = [](this auto const& self, int n) {
+    if (n < 2) return n;
+    return self(n-1) + self(n-2);
+};
+```
+
+=================================
+
+## Solution 3: Deduce <span class="emph">this</span>
+
+<pre><code data-trim data-noescape class="lang-cpp">
+struct Node;
+using Tree = variant&lt;Leaf, Node*&gt;;
+struct Node {
+    Tree left;
+    Tree right;
+};
+
+int num_leaves(Tree const& tree) {
+    return visit(overload(
+        [](Leaf const&) { return 1; },
+        [](<span class="fragment highlight-current-code" data-fragment-index=1>this auto const& self</span>, Node* n) -&gt; int {
+            return visit(<span class="fragment highlight-current-code" data-fragment-index=1>self</span>, n-&gt;left) + visit(<span class="fragment highlight-current-code" data-fragment-index=1>self</span>, n-&gt;right);
+        }
+    ), tree);
+}
+</code></pre>
+
+=================================
+
+### Problem 4: By-value member functions
+
+Can't do it in the language at all
+
+### Solution 4: Deduce <span class="emph">this</span> by value
+
+```c++
+template <class charT, class traits = char_traits<charT>>
+class basic_string_view {
+private:
+    const_pointer data_;
+    size_type size_;
+public:
+    constexpr size_type size(this basic_string_view self) {
+        return self.size_;
+    }
+};
+```
+
+=================================
+
+## Solution 4: Deduce <span class="emph">this</span> by value
+
+```c++
+struct less_than {
+  template <typename T, typename U>
+  bool operator()(this less_than, T const& lhs, U const& rhs) {
+    return lhs < rhs;
+  }
+};
+```
+
+==================================
+
+### Problem 5: SFINAE-unfriendly callables
+
+```c++
+template <typename F>
+struct call_wrapper {
+  F f;
+  template <typename... Args>
+  auto operator()(Args&&... args) & -> decltype(!invoke(f, FWD(args)...))
+  template <typename... Args>
+  auto operator()(Args&&... args) const& -> decltype(!invoke(f, FWD(args)...))
+  // ... same for && and const && ...
+};
+
+template <typename F>
+auto not_fn(F&& f) {
+  return call_wrapper<decay_t<F>>{forward<F>(f)};
+}
+```
+
+==================================
+
+### Problem 5: SFINAE-unfriendly callables
+
+```c++
+struct unfriendly {
+    template <typename T>
+    auto operator()(T v) {
+        static_assert(is_same_v<T, int>);
+        return v;
+    }
+
+    template <typename T>
+    auto operator()(T v) const {
+        static_assert(is_same_v<T, double>);
+        return v;
+    }
+};
+
+std::not_fn(unfriendly{})(1); // static assert!
+```
+
+==================================
+
+### Problem 5: SFINAE-unfriendly callables
+
+```c++
+struct fun {
+    template <typename... Args>
+    void operator()(Args&&...) = delete;
+
+    template <typename... Args>
+    bool operator()(Args&&...) const { return true; }
+};
+
+std::not_fn(fun{})();  // ok?!? Evaluates as false
+```
+
+==================================
+
+## Solution 5: Deduce <span class="emph">this</span>
+
+```c++
+template <typename F>
+struct call_wrapper {
+  F f;
+  template <typename Self, typename... Args>
+  auto operator()(this Self&& self, Args&&... args)
+    BOOST_HOF_RETURNS(!invoke(FWD(self).f, FWD(args)...))
+};
+
+template <typename F>
+auto not_fn(F&& f) {
+  return call_wrapper<decay_t<F>>{FWD(f)};
+}
+
+not_fn(unfriendly{})(1); // ok, as desired
+not_fn(fun{})();         // error, as expected
+```
+                </script>
+                </section>
+			</div>
+		</div>
+
+        
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.js"></script>
+		<script>
+			// More info about config & dependencies:
+			// - https://github.com/hakimel/reveal.js#configuration
+			// - https://github.com/hakimel/reveal.js#dependencies
+			Reveal.initialize({
+                slideNumber: 'c',
+            
+				dependencies: [
+					{ src: 'plugin/markdown/marked.js' },
+					{ src: 'plugin/markdown/markdown.js' },
+					{ src: 'plugin/notes/notes.js', async: true },
+					{ src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+                    { src: 'js/line-numbers.js' }
+				]
+			});
+		</script>
+	</body>
+</html>
