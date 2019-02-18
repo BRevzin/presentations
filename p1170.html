@@ -286,6 +286,49 @@ input | view::transform([](int i){ return X(i); })
 input | view::transform(X);
 ```
 
+=================================
+
+## Function Composition
+
+```c++
+// g, then f
+template <typename F, typename G>
+auto operator<<(overload_set<F> f, overload_set<G> g) {
+    return [=](auto... xs) -> decltype(f(g(xs...)))
+        return f(g(xs...));
+    }
+}
+
+// f, then g
+template <typename F, typename G>
+auto operator>>(overload_set<F> f, overload_set<G> g) {
+    return g << f;
+}
+```
+
+=================================
+
+## Function Composition
+
+<pre><code data-trim data-noescape class="lang-cpp">
+auto g = std::not_fn(f); 
+</code></pre>
+
+<div class="fragment" data-fragment-index=1><pre><code data-trim data-noescape class="lang-cpp">
+auto g1 = f >> std::negate();
+</code></pre></div>
+
+<div class="fragment" data-fragment-index=2><pre><code data-trim data-noescape class="lang-cpp">
+auto g2 = f >> operator!;
+</code></pre></div>
+
+<div class="fragment" data-fragment-index=3><pre><code data-trim data-noescape class="lang-cpp">
+auto g3 = f >> (!);
+</code></pre></div>
+
+<div class="fragment" data-fragment-index=4><pre><code data-trim data-noescape class="lang-cpp">
+auto g4 = f >> (not);
+</code></pre></div>
 
                 </script>
                 </section>
