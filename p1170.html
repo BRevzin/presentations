@@ -85,12 +85,12 @@ algorithm(func, N::getX());
 ## Failure Cases
 
 <ul>
-<span class="fragment"><li>`func()` could take default arguments</li></span>
 <span class="fragment"><li>`func()` could name a function template</li></span>
 <span class="fragment"><li>`func()` could name an overload set</li></span>
+<span class="fragment"><li>`func()` could take default arguments</li></span>
 <span class="fragment"><li>`func()` could have been found by ADL</li></span>
 <span class="fragment"><li>`func()` could be a non-static member function</li></span>
-<span class="fragment"><li>`func()` could be a partial member access (i.e. `obj.func(x)`)</li></span>
+<span class="fragment"><li>`func()` could be a partial member access - e.g. `v.push_back(x)`</li></span>
 <span class="fragment"><li>`func()` could be a standard library function</li></span>
 </ul>
 
@@ -117,7 +117,7 @@ void simple(N::X );
 algorithm(simple, N::getX());
 ```
 
-<span class="fragment">Any change to `simple()` is breaking... </span>
+Any change to `simple()` is breaking...
 
 =================================
 
@@ -195,8 +195,96 @@ void call_with_42(std::overload_set<F> f) {
 }
 ```
 
+=================================
 
+## Deduction Rules 1: Objects
 
+```c++
+template <typename F> void check(std::overload_set<F> );
+
+int square(int i) { return i*i; };
+auto triple = [](int i) { return i * 3; };
+
+check(&square); // F is int(*)(int)
+check(triple);  // F is decltype(triple)
+```
+
+=================================
+
+## Deducing Rules 2: Names
+
+```c++
+void g(int);
+void h(int);
+void h(double);
+namespace N {
+    struct X { /* ... */ };
+    X getX();
+
+    void f(X);
+    void g(X);
+    void h(X);
+}
+
+algorithm(f, N::getX()); // ok - calls N::f
+algorithm(g, N::getX()); // ok - calls N::g
+algorithm(h, N::getX()); // ok - calls N::h
+```
+
+=================================
+
+## Deduction Rules 3: Partial Member
+
+```c++
+std::string s = "hello";    
+std::overload_set f = s.size;        // f holds a copy of s (i.e. by value)
+std::overload_set g1 = (&s)->size;   // g1 holds a copy of &s (i.e. by ref)
+std::overload_set g2 = ref(s).size;  // g2 also holds a reference
+
+s += ", world";
+assert(f() == 5);
+assert(g1() == 12);
+assert(g2() == 12);
+```
+
+=================================
+
+## Deduction Rules 4: Type-Member
+
+```c++
+// From N4128
+std::sort(a, std::less<>(), &employee::last);
+auto p = std::lower_bound(a, "Parent", std::less<>(), &employee::last);
+
+// With P1170
+std::sort(a, std::less<>(), employee.last);
+auto p = std::lower_bound(a, "Parent", std::less<>(), employee.last);
+```
+
+=================================
+
+## Deduction Rules 5: operators
+
+```c++
+// C++20
+std::ranges::sort(a, std::greater());
+
+// Proposed
+std::ranges::sort(a, operator>);
+std::ranges::sort(a, (>));
+```
+
+=================================
+
+## Deducing Rules 6: Type name
+
+```c++
+// C++20
+input | view::transform([](int i){ return X(i); })
+
+// Proposed
+input | view::transform(X);
+```
 
 
                 </script>
