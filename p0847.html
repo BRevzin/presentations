@@ -191,6 +191,66 @@ struct optional {
 
 =================================
 
+## Shadowing Mitigation
+
+```
+struct B {
+    int i;
+    auto&& get(this auto&& self) {
+        return FWD(self).i;
+    }
+};
+
+struct D {
+    double i;
+};
+
+D{}.get(); // oops, D::i
+```
+
+=================================
+
+## Shadowing Mitigation 2
+
+```
+struct B {
+    int i;
+    auto&& get(this auto&& self) {
+        return FWD(self).B::i;
+    }
+};
+
+struct D {
+    double i;
+};
+
+D{}.get(); // ok, rvalue reference to B::i
+```
+
+=================================
+
+## Shadowing Mitigation 3
+
+<pre><code data-trim data-noescape class="lang-cpp">
+struct B {
+    int i;
+    auto&& get(this auto&& self) {
+        <span class="fragment highlight-current-code" data-fragment-index=1>return FWD(self).B::i</span>;
+    }
+};
+
+struct D1 : private B { using B::get; };
+
+struct D2 : private B {
+    int f() { return B::get(); }
+};
+
+D1{}.get(); // error
+D2{}.get(); // error
+</code></pre>
+
+=================================
+
 ## Problem 2: CRTP
 
 ```c++
