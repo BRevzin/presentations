@@ -97,7 +97,7 @@ strong_ordering operator&lt;=&gt;(Aggr const& rhs) const
 {
     if (auto cmp = i &lt;=&gt; rhs.i; cmp != 0) return cmp;
     if (auto cmp = c &lt;=&gt; rhs.c; cmp != 0) return cmp;
-    return std::compare_3way(q, rhs.q);
+    return assume_strong_order(q, rhs.q); // D0891R3, name TBD
 }
 </code></pre>
 
@@ -108,9 +108,9 @@ strong_ordering operator&lt;=&gt;(Aggr const& rhs) const
 <pre><code data-trim data-noescape class="lang-cpp">
 strong_ordering operator&lt;=&gt;(Aggr const& rhs) const
 {
-    if (auto cmp = std::compare_3way(i, rhs.i); cmp != 0) return cmp;
-    if (auto cmp = std::compare_3way(c, rhs.c); cmp != 0) return cmp;
-    return std::compare_3way(q, rhs.q);
+    if (auto cmp = assume_strong_order(i, rhs.i); cmp != 0) return cmp;
+    if (auto cmp = assume_strong_order(c, rhs.c); cmp != 0) return cmp;
+    return assume_strong_order(q, rhs.q);
 }
 </code></pre>
 
@@ -368,11 +368,10 @@ struct Y {
 
     bool operator==(Y const&) const = default;
     partial_ordering operator<=>(Y const& rhs) const {
-        if (auto cmp = compare_3way_fallback<partial_ordering>(p, rhs.p);
-            cmp != 0) {
+        if (auto cmp = assume_partial_order(p, rhs.p); cmp != 0) {
             return cmp;
         }
-        return compare_3way_fallback<strong_ordering>(t, rhs.t);
+        return assume_strong_order(t, rhs.t);
     }
 };
 ```
