@@ -251,6 +251,29 @@ D2{}.get(); // error
 
 =================================
 
+## Shadowing Mitigation 4
+
+<pre><code data-trim data-noescape class="lang-cpp">
+struct B {
+    int i;
+    auto&& get(<span class="fragment highlight-current-code" data-fragment-index=1>this B auto&& self</span>) {
+        return FWD(self).B::i;
+    }
+};
+
+struct D1 : private B { using B::get; };
+
+struct D2 : private B {
+    int f() { return B::get(); }
+};
+
+D1{}.get(); // ok
+D2{}.get(); // ok
+</code></pre>
+
+
+=================================
+
 ## Problem 2: CRTP
 
 ```c++
