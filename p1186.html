@@ -320,19 +320,15 @@ struct Y {
 ## Examples 5
 
 ```c++
-struct Partial {
-    bool operator==(Partial const&) const;
-    bool operator<(Partial const&) const;
-};
-struct Total {
-    bool operator==(Total const&) const;
-    bool operator<(Total const&) const;
-};
+struct Partial { /* has == and < */ };
+struct Total { /* has == and < */ };
 
 struct Y {
     Partial p;
     Total t;
-    // synthesizes partial_ordering for both
+    int i;
+    
+    // synthesizes partial_ordering for both, <=> for int
     partial_ordering operator<=>(Y const&) const = defualt;
 };
 ```
@@ -350,6 +346,7 @@ struct Y {
     
     Partial p;
     Total2 t;
+    int i;
     
     // synthesizes partial_ordering for Partial and
     // strong_ordering for Total
@@ -365,13 +362,35 @@ struct Y {
 struct Y {
     Partial p;
     Total t;
+    int i;
 
     bool operator==(Y const&) const = default;
     partial_ordering operator<=>(Y const& rhs) const {
-        if (auto cmp = assume_partial_order(p, rhs.p); cmp != 0) {
+        if (auto cmp = assume_partial_order(p, rhs.p); cmp != 0)
             return cmp;
-        }
-        return assume_strong_order(t, rhs.t);
+        if (auto cmp = assume_strong_order(t, rhs.t); cmp != 0)
+            return cmp;
+        return i <=> rhs.i;
+    }
+};
+```
+
+=================================
+
+## Examples 5d
+
+```c++
+struct Y {
+    Partial p;
+    Total t;
+    int i;
+
+    bool operator==(Y const&) const = default;
+    partial_ordering operator<=>(Y const& rhs) const {
+        return member_wise_compare(*this, rhs,
+            &Y::p, assume_partial_order,
+            &Y::t, assume_strong_order,
+            &Y::i, compare_three_way);
     }
 };
 ```
